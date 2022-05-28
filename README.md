@@ -1,2 +1,6 @@
 # Fractals
-Generate Newton Fractals using GPU
+
+[![Build Status]]Passing
+
+
+\alpha  

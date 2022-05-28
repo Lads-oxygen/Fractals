@@ -1,13 +1,13 @@
 using CUDA
 # using BenchmarkTools
 # using Test
-using Adapt
-using Serialization
+# using Adapt
+# using Serialization
 using Plots
 using Polynomials
 # using Roots
 
-N = 8192*2
+N = 1024*16
 const MAXITER = 50
 const TOL = 1e-20
 const origin = ComplexF32(-1, 1)
@@ -16,6 +16,8 @@ const Δ = width / (N - 1)
 
 poly = Vector{ComplexF32}([-1, 0, 0, 1])
 p = Polynomial(poly)
+
+f_x = Matrix{ComplexF32}(undef, N, N)
 
 
 function eval(f, x)
@@ -40,31 +42,30 @@ function secant!(f, cfx)
     # @cuprintln(x, " ", y, " fzn ", zn.re, " ", zn.im)
 
     for i = 1:MAXITER
-    
+
         if abs(f_zn - f_zm) < TOL
             # @cuprintln("division by 0")
-            cfx[x, y] = -999
+            cfx[x, y] = 0
             return
         end
-    
+
         temp = zn - f_zn * (zn - zm) / (f_zn - f_zm)
         zm = zn
         zn = temp
         f_zm = f_zn
         f_zn = eval(f, zn)
-    
+
         if abs(zn - zm) < TOL && abs(f_zn) < TOL
             # @cuprintln("root is", zn.re, " ", zn.im)
             cfx[x, y] = zn
             return
         end
     end
-    cfx[x, y] = -999
+    cfx[x, y] = 0
     # @cuprintln("did not converge")
     nothing
 end
 
-f_x = Matrix{ComplexF32}(undef, N, N)
 
 cpoly = cu(poly)
 cfx = cu(f_x)
@@ -85,9 +86,8 @@ end
 
 function main()
     run!(cpoly, cfx)
-    # serialize("data", arr)
     # fractal = gen_frac(f_x)
-    # make_fig(fractal)
+    make_fig(f_x)
     return nothing
 end
 
@@ -120,11 +120,13 @@ function make_fig(fractal)
     # fractal = deserialize("data")
     gr()
     # display(fractal)
-    img = heatmap(1:N, 1:N, fractal, legend=:none, axis=nothing)
+    img = heatmap(abs.(fractal), legend=:none, axis=nothing, size=(N,N))
     savefig(img, "./fractal.png")
+    println(typeof(zeros(2,2)), typeof(fractal))
 
     # histogram2d(f_x, nbins = (40, 40), show_empty_bins = true, normed = true, aspect_ratio = 1)
 end
+
 
 main()
 # make_fig()
