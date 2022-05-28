@@ -1,6 +1,3 @@
 # Fractals
 
-[![Build Status]]Passing
-
-
-\alpha  
+### Generating newton fractals for a given polynomial using GPU parallelisation
