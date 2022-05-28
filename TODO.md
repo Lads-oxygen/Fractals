@@ -1,11 +1,15 @@
-# To do
+# Ideas
+
+- Exponential smoothing
+
+- Add number of iterations
 
 - Possibility of using 64 bit floats
 
-- Use GLMakie to interact with fractals
+- Add opengl
 
 - Functionality for non-linear equations
 
-- Make a blog?
+- Add to a blog post?
 
 - Add support for Intel GPU and/or webGL?

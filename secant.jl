@@ -2,21 +2,18 @@ using CUDA
 # using BenchmarkTools
 # using Test
 # using Adapt
-# using Serialization
-using Plots
+# using Plots
 using Polynomials
 # using Roots
+using GLMakie
 
-N = 1024*16
+N = 512
 const MAXITER = 50
 const TOL = 1e-20
-const origin = ComplexF32(-1, 1)
-width = abs2(origin)
-const Δ = width / (N - 1)
 
 poly = Vector{ComplexF32}([-1, 0, 0, 1])
 p = Polynomial(poly)
-
+roots = Polynomials.roots(p)
 f_x = Matrix{ComplexF32}(undef, N, N)
 
 
@@ -29,7 +26,7 @@ function eval(f, x)
 end
 
 
-function secant!(f, cfx)
+function secant!(f, croots, origin, Δ, cfractal)
 
     x = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     y = (blockIdx().y - 1) * blockDim().y + threadIdx().y
@@ -38,113 +35,110 @@ function secant!(f, cfx)
     zn = origin + complex(x * Δ, -y * Δ)
     f_zm = f[1]
     f_zn = eval(f, zn)
-    # @cuprint("grid ", gridDim().z)
     # @cuprintln(x, " ", y, " fzn ", zn.re, " ", zn.im)
 
     for i = 1:MAXITER
-
+    
         if abs(f_zn - f_zm) < TOL
             # @cuprintln("division by 0")
-            cfx[x, y] = 0
             return
         end
-
+    
         temp = zn - f_zn * (zn - zm) / (f_zn - f_zm)
         zm = zn
         zn = temp
         f_zm = f_zn
         f_zn = eval(f, zn)
-
+    
         if abs(zn - zm) < TOL && abs(f_zn) < TOL
             # @cuprintln("root is", zn.re, " ", zn.im)
-            cfx[x, y] = zn
+            break
+        end
+
+        if i == MAXITER
             return
         end
     end
-    cfx[x, y] = 0
-    # @cuprintln("did not converge")
+
+
+    for i = 1:length(croots)
+        if abs(zn - croots[i]) < 1e-5
+            cfractal[x, y] = i
+            break
+        end
+    end        
     nothing
 end
 
 
 cpoly = cu(poly)
+croots = cu(roots)
 cfx = cu(f_x)
+fractal = zeros(Int8, N, N)
+cfractal = cu(fractal)
 
 
-function run!(cpoly, cfx)
-    # kernel = @cuda launch = false secant!(cpoly, cfx)
+function run!(cpoly, croots, origin, cfractal)
+    width = abs2(origin)
+    Δ = width / (N - 1)
+    display(origin)
     threads = min(N, 8)
     blocks = cld(N, threads)
     CUDA.@sync begin
-        @cuda threads = (threads, threads) blocks = (blocks, blocks) secant!(cpoly, cfx)
+        @cuda threads = (threads, threads) blocks = (blocks, blocks) secant!(cpoly, croots, origin, Δ, cfractal)
     end
-    println(threads, " ", blocks)
-    copyto!(f_x, cfx)
+    # println(threads, " ", blocks)
     return nothing
 end
 
+function update(origin, cfractal)
+    run!(cpoly, croots, origin, cfractal)
+    Array(cfractal)
+end
 
 function main()
-    run!(cpoly, cfx)
-    # fractal = gen_frac(f_x)
-    make_fig(f_x)
-    return nothing
+    origin = ComplexF32(-1, 1)
+    fractal = update(origin, cfractal)
+    canvas(fractal)
 end
 
 
-function gen_frac(f_x)
-    roots = Polynomials.roots(p)
-    fractal = Matrix{Int8}(undef, N, N)
-    # display(f_x)
-    # println("\n")
-    # display(roots)
-    # println("\n")
-    for i in 1:N, j in 1:N
-        # a = filter(x -> abs(x-f_x[i, j]) < TOL, roots)
-        index = findall(x -> abs(f_x[i, j] - roots[x]) < 1, eachindex(roots))
-        try
-            fractal[i, j] = index[1]
-            # println("No error, index is: ", index[1], " ", fractal[i, j])
-        catch e
-            # println("Error here: ", e)
-            fractal[i, j] = 0
-        end
-        # print(" ",fractal[i, j])
+
+function canvas(fractal)
+    origin = complex(1,1)
+    # f = Observable(fractal)
+    GLMakie.activate!()
+    set_window_config!(;
+        vsync=false,
+        framerate=30.0,
+        float=false,
+        pause_rendering=false,
+        focus_on_show=false,
+        decorated=true,
+        title="Fractal"
+    )
+    scene = Scene()
+    subwindow = Scene(scene, px_area=Rect(0, 0, 300, 300), clear=true, backgroundcolor=:black)
+    fig, axis, plot = heatmap(fractal)
+    display(fig)
+    for i = 1:1000
+        origin *= 0.99
+        plot[1] = update!(origin, cfractal)
+        yield()
+        sleep(3)
     end
-    fractal
+        
+
 end
 
-
-
-function make_fig(fractal)
-    # fractal = deserialize("data")
-    gr()
-    # display(fractal)
-    img = heatmap(abs.(fractal), legend=:none, axis=nothing, size=(N,N))
-    savefig(img, "./fractal.png")
-    println(typeof(zeros(2,2)), typeof(fractal))
-
-    # histogram2d(f_x, nbins = (40, 40), show_empty_bins = true, normed = true, aspect_ratio = 1)
-end
 
 
 main()
-# make_fig()
-
-
-# run!(a, f)
-# @time run!(a, f)  
-
-# print(a, b)
 
 
 
-
-
-
-# bench_secant!(b)  # run it once to force compilation
-# CUDA.@time bench_secant!(b)
-# println(b)
-
+# @time
+# @btime
+# CUDA.@time
 
 
